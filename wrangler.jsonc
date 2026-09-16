@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "doodle-wall",
+  "pages_build_output_dir": "./public",
+  "compatibility_date": "2026-09-14",
+  "kv_namespaces": [
+    {
+      "binding": "CANVAS",
+      "id": "a8ffbe1c6b3449af85461be94716832e"
+    }
+  ]
+}
