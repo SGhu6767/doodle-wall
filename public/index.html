@@ -1,0 +1,637 @@
+<!DOCTYPE html><html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>公共涂鸦墙</title><style>
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    padding: 16px;
+    background: #f2f4f7;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+  }
+
+  h1 {
+    font-size: 20px;
+    margin: 4px 0 12px;
+    color: #333;
+  }
+
+  #status {
+    font-size: 12px;
+    color: #999;
+    margin-bottom: 8px;
+    height: 16px;
+  }
+
+  /* ---------- 横版长方形画布区域 ---------- */
+  .canvas-wrap {
+    width: 100%;
+    max-width: 900px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    padding: 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* ---------- 横版长方形画布 ---------- */
+  canvas {
+    width: 2200px;
+    height: 700px;
+    max-width: none;
+    display: block;
+    border-radius: 8px;
+    background: #ffffff;
+    touch-action: none;
+    cursor: crosshair;
+    border: 1px solid #e5e5e5;
+  }
+
+  .toolbar {
+    width: 100%;
+    max-width: 900px;
+    margin-top: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    background: #fff;
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  }
+
+  .colors {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .swatch {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .swatch.active {
+    border-color: #333;
+    transform: scale(1.1);
+  }
+
+  .size-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #555;
+  }
+
+  input[type="range"] {
+    width: 90px;
+  }
+
+  button {
+    border: none;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    background: #eee;
+    color: #333;
+  }
+
+  button.danger {
+    background: #ffe3e3;
+    color: #c0392b;
+  }
+
+  .spacer {
+    flex: 1;
+  }
+
+  .scroll-hint {
+    width: 100%;
+    max-width: 900px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+
+  .scroll-hint button {
+    background: #eef2ff;
+    color: #3b5bdb;
+  }
+</style></head><body><h1>🎨 公共涂鸦墙</h1><div id="status">加载中...</div><div class="canvas-wrap" id="canvasWrap">
+  <canvas id="board" width="2200" height="700"></canvas>
+</div><div class="scroll-hint">
+  <button id="scrollLeftBtn">◀ 左移</button>  <span style="font-size:12px;color:#999;">
+    画布比屏幕宽，可拖动滚动条或点按钮左右移动
+  </span><button id="scrollRightBtn">右移 ▶</button>
+
+</div><div class="toolbar">  <div class="colors" id="colors"></div>  <div class="size-group">
+    粗细
+    <input
+      type="range"
+      id="widthSlider"
+      min="1"
+      max="24"
+      value="4"
+    />
+    <span id="widthLabel">4</span>
+  </div>  <div class="spacer"></div>  <button id="clearBtn" class="danger">
+    清空画布
+  </button></div><script>
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+
+const COLORS = [
+  '#1a1a1a',
+  '#e74c3c',
+  '#e67e22',
+  '#f1c40f',
+  '#2ecc71',
+  '#1abc9c',
+  '#3498db',
+  '#9b59b6',
+  '#e84393',
+  '#ffffff'
+];
+
+let currentColor = COLORS[0];
+let currentWidth = 4;
+let isDrawing = false;
+let currentStroke = null;
+let knownCount = -1;
+let pollTimer = null;
+
+
+// ---------- 颜色选择器 ----------
+
+const colorsEl = document.getElementById('colors');
+
+COLORS.forEach((c, i) => {
+
+  const dot = document.createElement('div');
+
+  dot.className =
+    'swatch' + (i === 0 ? ' active' : '');
+
+  dot.style.background = c;
+
+  if (c === '#ffffff') {
+    dot.style.boxShadow =
+      'inset 0 0 0 1px #ddd';
+  }
+
+  dot.addEventListener('click', () => {
+
+    currentColor = c;
+
+    document
+      .querySelectorAll('.swatch')
+      .forEach(el => el.classList.remove('active'));
+
+    dot.classList.add('active');
+
+  });
+
+  colorsEl.appendChild(dot);
+
+});
+
+
+// ---------- 粗细 ----------
+
+const widthSlider =
+  document.getElementById('widthSlider');
+
+const widthLabel =
+  document.getElementById('widthLabel');
+
+widthSlider.addEventListener('input', () => {
+
+  currentWidth = Number(widthSlider.value);
+
+  widthLabel.textContent = currentWidth;
+
+});
+
+
+// ---------- 坐标换算 ----------
+
+function getCanvasPoint(evt) {
+
+  const rect =
+    canvas.getBoundingClientRect();
+
+  const scaleX =
+    canvas.width / rect.width;
+
+  const scaleY =
+    canvas.height / rect.height;
+
+  return [
+    (evt.clientX - rect.left) * scaleX,
+    (evt.clientY - rect.top) * scaleY
+  ];
+
+}
+
+
+// ---------- 绘制一整笔 ----------
+
+function drawStroke(stroke) {
+
+  if (!stroke.points ||
+      stroke.points.length === 0) {
+    return;
+  }
+
+  ctx.strokeStyle = stroke.color;
+  ctx.lineWidth = stroke.width;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  if (stroke.points.length === 1) {
+
+    const [x, y] = stroke.points[0];
+
+    ctx.beginPath();
+
+    ctx.arc(
+      x,
+      y,
+      stroke.width / 2,
+      0,
+      Math.PI * 2
+    );
+
+    ctx.fillStyle = stroke.color;
+
+    ctx.fill();
+
+    return;
+  }
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    stroke.points[0][0],
+    stroke.points[0][1]
+  );
+
+  for (
+    let i = 1;
+    i < stroke.points.length;
+    i++
+  ) {
+
+    ctx.lineTo(
+      stroke.points[i][0],
+      stroke.points[i][1]
+    );
+
+  }
+
+  ctx.stroke();
+
+}
+
+
+// ---------- 重绘全部 ----------
+
+function redrawAll(strokes) {
+
+  ctx.clearRect(
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
+  strokes.forEach(drawStroke);
+
+}
+
+
+// ---------- 获取最新画布 ----------
+
+async function pollCanvas() {
+
+  if (isDrawing) {
+    return;
+  }
+
+  try {
+
+    const res =
+      await fetch('/api/canvas');
+
+    const data =
+      await res.json();
+
+    if (data.count !== knownCount) {
+
+      knownCount = data.count;
+
+      redrawAll(
+        data.strokes || []
+      );
+
+    }
+
+    statusEl.textContent =
+      '已同步 · 共 ' +
+      (data.count || 0) +
+      ' 笔';
+
+  } catch (e) {
+
+    statusEl.textContent =
+      '连接失败，正在重试...';
+
+  }
+
+}
+
+
+// ---------- 开始绘画 ----------
+
+canvas.addEventListener(
+  'pointerdown',
+  (e) => {
+
+    isDrawing = true;
+
+    canvas.setPointerCapture(
+      e.pointerId
+    );
+
+    const p =
+      getCanvasPoint(e);
+
+    currentStroke = {
+
+      points: [p],
+
+      color: currentColor,
+
+      width: currentWidth
+
+    };
+
+  }
+);
+
+
+// ---------- 绘画中 ----------
+
+canvas.addEventListener(
+  'pointermove',
+  (e) => {
+
+    if (
+      !isDrawing ||
+      !currentStroke
+    ) {
+      return;
+    }
+
+    const p =
+      getCanvasPoint(e);
+
+    currentStroke.points.push(p);
+
+    ctx.strokeStyle =
+      currentStroke.color;
+
+    ctx.lineWidth =
+      currentStroke.width;
+
+    ctx.lineCap = 'round';
+
+    ctx.lineJoin = 'round';
+
+    const pts =
+      currentStroke.points;
+
+    const n = pts.length;
+
+    if (n >= 2) {
+
+      ctx.beginPath();
+
+      ctx.moveTo(
+        pts[n - 2][0],
+        pts[n - 2][1]
+      );
+
+      ctx.lineTo(
+        pts[n - 1][0],
+        pts[n - 1][1]
+      );
+
+      ctx.stroke();
+
+    }
+
+  }
+);
+
+
+// ---------- 完成一笔 ----------
+
+async function finishStroke() {
+
+  if (!currentStroke) {
+    return;
+  }
+
+  const stroke =
+    currentStroke;
+
+  currentStroke = null;
+
+  isDrawing = false;
+
+  if (stroke.points.length < 1) {
+    return;
+  }
+
+  try {
+
+    await fetch(
+      '/api/stroke',
+      {
+        method: 'POST',
+
+        headers: {
+          'Content-Type':
+            'application/json'
+        },
+
+        body:
+          JSON.stringify(stroke)
+      }
+    );
+
+  } catch (e) {
+
+    // 提交失败不阻塞
+
+  }
+
+  pollCanvas();
+
+}
+
+
+canvas.addEventListener(
+  'pointerup',
+  finishStroke
+);
+
+canvas.addEventListener(
+  'pointercancel',
+  finishStroke
+);
+
+canvas.addEventListener(
+  'pointerleave',
+  (e) => {
+
+    if (isDrawing) {
+      finishStroke();
+    }
+
+  }
+);
+
+
+// ---------- 清空画布 ----------
+
+document
+  .getElementById('clearBtn')
+  .addEventListener(
+    'click',
+    async () => {
+
+      const pwd =
+        prompt('请输入清空密码：');
+
+      if (pwd === null) {
+        return;
+      }
+
+      try {
+
+        const res =
+          await fetch(
+            '/api/clear',
+            {
+              method: 'POST',
+
+              headers: {
+                'Content-Type':
+                  'application/json'
+              },
+
+              body:
+                JSON.stringify({
+                  password: pwd
+                })
+            }
+          );
+
+        const data =
+          await res.json();
+
+        if (res.ok) {
+
+          knownCount = -1;
+
+          pollCanvas();
+
+        } else {
+
+          alert(
+            data.error || '清空失败'
+          );
+
+        }
+
+      } catch (e) {
+
+        alert('网络错误');
+
+      }
+
+    }
+  );
+
+
+// ---------- 启动 ----------
+
+pollCanvas();
+
+pollTimer =
+  setInterval(
+    pollCanvas,
+    2000
+  );
+
+
+// ---------- 左右移动 ----------
+
+const canvasWrap =
+  document.getElementById(
+    'canvasWrap'
+  );
+
+document
+  .getElementById('scrollLeftBtn')
+  .addEventListener(
+    'click',
+    () => {
+
+      canvasWrap.scrollBy({
+        left: -300,
+        behavior: 'smooth'
+      });
+
+    }
+  );
+
+document
+  .getElementById('scrollRightBtn')
+  .addEventListener(
+    'click',
+    () => {
+
+      canvasWrap.scrollBy({
+        left: 300,
+        behavior: 'smooth'
+      });
+
+    }
+  );
+
+</script></body>
+  </html>
